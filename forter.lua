@@ -1,7 +1,7 @@
 --[[
     FORTER — ULTIMATE SCRIPT FOR XENO
-    Версия: 10.8 (HP BAR УБЫВАЕТ СВЕРХУ ВНИЗ)
-    Исправлено: при потере HP полоска сжимается сверху вниз
+    Версия: 10.9 (ESP И HP BAR ВЫКЛЮЧЕНЫ ПО УМОЛЧАНИЮ + БИНД HP)
+    Исправлено: ESP и HP Bar теперь выключены при старте, HP Bar в Visuals
 --]]
 
 -- ===== СЕРВИСЫ =====
@@ -18,7 +18,7 @@ local humanoid = character and character:FindFirstChild("Humanoid")
 
 -- ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 local flyEnabled = false
-local espEnabled = false
+local espEnabled = false          -- ВЫКЛЮЧЕН ПО УМОЛЧАНИЮ
 local espMode = "v1"
 local menuOpen = false
 local scriptActive = true
@@ -27,12 +27,13 @@ local dragStart = nil
 local dragStartPos = nil
 local animating = false
 local espCreating = false
-local hpBarsEnabled = true
+local hpBarsEnabled = false       -- ВЫКЛЮЧЕН ПО УМОЛЧАНИЮ
 
 -- ===== СИСТЕМА БИНДОВ =====
 local bindings = {
     fly = nil,
     esp = nil,
+    hp = nil,   -- НОВЫЙ БИНД ДЛЯ HP
     menu = Enum.KeyCode.LeftAlt
 }
 
@@ -223,6 +224,7 @@ local function toggleESP()
     end
     if menuOpen then
         updateESPButtons()
+        updateHPButton()
     end
 end
 
@@ -238,7 +240,7 @@ local function setESPMode(mode)
 end
 
 -- ============================================
--- ЧАСТЬ 3: HP BAR (УБЫВАЕТ СВЕРХУ ВНИЗ)
+-- ЧАСТЬ 3: HP BAR
 -- ============================================
 local hpBarScreenGui = Instance.new("ScreenGui")
 hpBarScreenGui.Name = "ForterHPBars"
@@ -300,8 +302,6 @@ local function createHPBar(plr)
         local maxHealth = data.humanoid.MaxHealth
         local percent = math.clamp(health / maxHealth, 0, 1)
         
-        -- ПРАВИЛЬНОЕ НАПРАВЛЕНИЕ: СВЕРХУ ВНИЗ
-        -- при 100% — полная высота, при 0% — высота 0 (сжата к верху)
         data.fill.Size = UDim2.new(1, 0, percent, 0)
         data.fill.Position = UDim2.new(0, 0, 0, 0)
         
@@ -437,10 +437,11 @@ local function toggleHPBars()
 end
 
 -- ============================================
--- ЧАСТЬ 4: UI (ТВОЁ МЕНЮ)
+-- ЧАСТЬ 4: UI
 -- ============================================
 local espV1Btn = nil
 local espV2Btn = nil
+local hpVisualBtn = nil
 
 function updateESPButtons()
     if mainTab and mainTab:IsA("Frame") then
@@ -465,16 +466,17 @@ function updateESPButtons()
             espV1Btn.BackgroundTransparency = 0.3
         end
     end
+    
+    if hpVisualBtn then
+        hpVisualBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
+        hpVisualBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+    end
 end
 
 function updateHPButton()
-    if mainTab then
-        for _, child in ipairs(mainTab:GetChildren()) do
-            if child:IsA("TextButton") and child.Name == "HPBarBtn" then
-                child.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
-                child.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
-            end
-        end
+    if hpVisualBtn then
+        hpVisualBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
+        hpVisualBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
     end
 end
 
@@ -548,7 +550,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 15, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "FORTER v10.8"
+title.Text = "FORTER v10.9"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextScaled = true
@@ -674,7 +676,7 @@ contentFrame.ClipsDescendants = true
 contentFrame.ZIndex = 3
 contentFrame.Parent = container
 
--- ===== ВКЛАДКА ГЛАВНАЯ =====
+-- ===== ВКЛАДКА ГЛАВНАЯ (БЕЗ HP) =====
 local mainTab = nil
 
 local function createMainTab()
@@ -689,10 +691,10 @@ local function createMainTab()
     espBtn.Name = "ESPMainBtn"
     espBtn.Size = UDim2.new(0, 190, 0, 45)
     espBtn.Position = UDim2.new(0.05, 0, 0.03, 0)
-    espBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 70)
+    espBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
     espBtn.BackgroundTransparency = 0.2
     espBtn.BorderSizePixel = 0
-    espBtn.Text = "ESP: ON"
+    espBtn.Text = "ESP: OFF"
     espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     espBtn.TextScaled = true
     espBtn.Font = Enum.Font.GothamSemibold
@@ -735,30 +737,6 @@ local function createMainTab()
         else
             stopFly()
         end
-    end)
-    
-    local hpBtn = Instance.new("TextButton")
-    hpBtn.Name = "HPBarBtn"
-    hpBtn.Size = UDim2.new(0.8, 0, 0, 45)
-    hpBtn.Position = UDim2.new(0.1, 0, 0.33, 0)
-    hpBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 70)
-    hpBtn.BackgroundTransparency = 0.2
-    hpBtn.BorderSizePixel = 0
-    hpBtn.Text = "HP: ON"
-    hpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    hpBtn.TextScaled = true
-    hpBtn.Font = Enum.Font.GothamSemibold
-    hpBtn.ZIndex = 4
-    hpBtn.Parent = tab
-    
-    local hpCorner = Instance.new("UICorner")
-    hpCorner.CornerRadius = UDim.new(0, 10)
-    hpCorner.Parent = hpBtn
-    
-    hpBtn.MouseButton1Click:Connect(function()
-        toggleHPBars()
-        hpBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
-        hpBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
     end)
     
     local shutdownBtn = Instance.new("TextButton")
@@ -805,7 +783,7 @@ local function createMainTab()
     return tab
 end
 
--- ===== ВКЛАДКА VISUALS =====
+-- ===== ВКЛАДКА VISUALS (С HP) =====
 local function createVisualsTab()
     local tab = Instance.new("Frame")
     tab.Name = "Tab_Visuals"
@@ -827,7 +805,7 @@ local function createVisualsTab()
     
     local v1Btn = Instance.new("TextButton")
     v1Btn.Name = "ESPv1Btn"
-    v1Btn.Size = UDim2.new(0.35, 0, 0, 80)
+    v1Btn.Size = UDim2.new(0.35, 0, 0, 70)
     v1Btn.Position = UDim2.new(0.1, 0, 0.2, 0)
     v1Btn.BackgroundColor3 = (espMode == "v1") and Color3.fromRGB(180, 50, 60) or Color3.fromRGB(40, 35, 45)
     v1Btn.BackgroundTransparency = (espMode == "v1") and 0 or 0.3
@@ -852,7 +830,7 @@ local function createVisualsTab()
     
     local v2Btn = Instance.new("TextButton")
     v2Btn.Name = "ESPv2Btn"
-    v2Btn.Size = UDim2.new(0.35, 0, 0, 80)
+    v2Btn.Size = UDim2.new(0.35, 0, 0, 70)
     v2Btn.Position = UDim2.new(0.55, 0, 0.2, 0)
     v2Btn.BackgroundColor3 = (espMode == "v2") and Color3.fromRGB(180, 50, 60) or Color3.fromRGB(40, 35, 45)
     v2Btn.BackgroundTransparency = (espMode == "v2") and 0 or 0.3
@@ -876,10 +854,10 @@ local function createVisualsTab()
     end)
     
     local descLabel = Instance.new("TextLabel")
-    descLabel.Size = UDim2.new(0.8, 0, 0, 50)
-    descLabel.Position = UDim2.new(0.1, 0, 0.5, 0)
+    descLabel.Size = UDim2.new(0.8, 0, 0, 40)
+    descLabel.Position = UDim2.new(0.1, 0, 0.48, 0)
     descLabel.BackgroundTransparency = 1
-    descLabel.Text = "v1 — зелёная подсветка персонажа\nv2 — красный контур/обводка (без заливки)"
+    descLabel.Text = "v1 — зелёная подсветка\nv2 — красный контур (без заливки)"
     descLabel.TextColor3 = Color3.fromRGB(150, 140, 150)
     descLabel.TextScaled = true
     descLabel.Font = Enum.Font.Gotham
@@ -887,13 +865,41 @@ local function createVisualsTab()
     descLabel.ZIndex = 4
     descLabel.Parent = tab
     
+    -- ===== HP BAR BUTTON (В VISUALS) =====
+    local hpBtn = Instance.new("TextButton")
+    hpBtn.Name = "HPVisualBtn"
+    hpBtn.Size = UDim2.new(0.8, 0, 0, 45)
+    hpBtn.Position = UDim2.new(0.1, 0, 0.7, 0)
+    hpBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    hpBtn.BackgroundTransparency = 0.2
+    hpBtn.BorderSizePixel = 2
+    hpBtn.BorderColor3 = Color3.fromRGB(180, 50, 60)
+    hpBtn.Text = "HP: OFF"
+    hpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    hpBtn.TextScaled = true
+    hpBtn.Font = Enum.Font.GothamSemibold
+    hpBtn.ZIndex = 4
+    hpBtn.Parent = tab
+    
+    local hpCorner = Instance.new("UICorner")
+    hpCorner.CornerRadius = UDim.new(0, 10)
+    hpCorner.Parent = hpBtn
+    
+    hpBtn.MouseButton1Click:Connect(function()
+        toggleHPBars()
+        hpBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
+        hpBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+    end)
+    
+    hpVisualBtn = hpBtn
+    
     espV1Btn = v1Btn
     espV2Btn = v2Btn
     
     return tab
 end
 
--- ===== ВКЛАДКА БИНДЫ =====
+-- ===== ВКЛАДКА БИНДЫ (С HP) =====
 local function createBindTab()
     local tab = Instance.new("Frame")
     tab.Name = "Tab_Binds"
@@ -904,8 +910,8 @@ local function createBindTab()
     
     local function createBindRow(name, bindKey)
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 55)
-        row.Position = UDim2.new(0, 0, #tab:GetChildren() * 0.13, 0)
+        row.Size = UDim2.new(1, 0, 0, 50)
+        row.Position = UDim2.new(0, 0, #tab:GetChildren() * 0.14, 0)
         row.BackgroundTransparency = 1
         row.Parent = tab
         
@@ -967,6 +973,7 @@ local function createBindTab()
     
     createBindRow("fly", bindings.fly)
     createBindRow("esp", bindings.esp)
+    createBindRow("hp", bindings.hp)   -- НОВЫЙ БИНД ДЛЯ HP
     createBindRow("menu", bindings.menu)
     
     return tab
@@ -1014,7 +1021,6 @@ function toggleMenu(open)
         tween1.Completed:Connect(function()
             animating = false
             updateESPButtons()
-            updateHPButton()
         end)
     else
         local tween1 = TweenService:Create(mainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
@@ -1044,6 +1050,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     local key = input.KeyCode
     if key == Enum.KeyCode.Unknown then return end
     
+    -- FLY BIND
     if bindings.fly and key == bindings.fly then
         flyEnabled = not flyEnabled
         if flyEnabled then startFly() else stopFly() end
@@ -1057,10 +1064,20 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
     end
     
+    -- ESP BIND
     if bindings.esp and key == bindings.esp then
         toggleESP()
     end
     
+    -- HP BIND (НОВЫЙ)
+    if bindings.hp and key == bindings.hp then
+        toggleHPBars()
+        if menuOpen then
+            updateESPButtons()
+        end
+    end
+    
+    -- MENU BIND
     if bindings.menu and key == bindings.menu then
         toggleMenu(not menuOpen)
     end
@@ -1113,7 +1130,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================
--- ИНИЦИАЛИЗАЦИЯ
+-- ИНИЦИАЛИЗАЦИЯ (ESP И HP ВЫКЛЮЧЕНЫ)
 -- ============================================
 task.wait(1)
 if not character or not humanoid then
@@ -1122,10 +1139,11 @@ if not character or not humanoid then
     humanoid = character:FindFirstChild("Humanoid")
 end
 
-espEnabled = true
+-- ВСЁ ВЫКЛЮЧЕНО ПО УМОЛЧАНИЮ
+espEnabled = false
 espMode = "v1"
-hpBarsEnabled = true
-createHPBarsForAll()
-createESPForAll()
+hpBarsEnabled = false
 
-print("FORTER v10.8 загружен! HP Bar убывает сверху вниз.")
+-- НЕ СОЗДАЁМ ESP И HP BAR ПРИ СТАРТЕ
+print("FORTER v10.9 загружен! ESP и HP Bar выключены по умолчанию.")
+print("Нажми Alt для меню. Включи их вручную.")
