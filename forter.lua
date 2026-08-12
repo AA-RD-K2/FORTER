@@ -1,8 +1,14 @@
 --[[
     FORTER — ULTIMATE SCRIPT FOR XENO
-    Версия: 12.4 (FINAL — БЕЗ SPEED, С HP НА ГЛАВНОЙ, С БЕЛЫМ КРЕДИТОМ)
+    Версия: 12.4 (FINAL — БЕЗ SPEED, С HP НА ГЛАВНОЙ, С БЕЛЫМ КРЕДИТОМ, С ПРОВЕРКОЙ PLACE ID)
     Содержит: Fly, ESP (только враги), HP Bar, Aim Assist (только враги), No Clip
 --]]
+
+-- ===== ПРОВЕРКА PLACE ID =====
+if game.PlaceId ~= 301549746 then
+    print("FORTER: Скрипт запущен не в нужном месте. Place ID: " .. game.PlaceId .. " (требуется: 301549746)")
+    return
+end
 
 -- ===== СЕРВИСЫ =====
 local Players = game:GetService("Players")
