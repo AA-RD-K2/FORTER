@@ -1,7 +1,7 @@
 --[[
     FORTER — ULTIMATE SCRIPT FOR XENO
-    Версия: 10.9 (ESP И HP BAR ВЫКЛЮЧЕНЫ ПО УМОЛЧАНИЮ + БИНД HP)
-    Исправлено: ESP и HP Bar теперь выключены при старте, HP Bar в Visuals
+    Версия: 12.4 (FINAL — БЕЗ SPEED, С HP НА ГЛАВНОЙ)
+    Содержит: Fly, ESP (только враги), HP Bar, Aim Assist (только враги), No Clip
 --]]
 
 -- ===== СЕРВИСЫ =====
@@ -18,7 +18,7 @@ local humanoid = character and character:FindFirstChild("Humanoid")
 
 -- ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 local flyEnabled = false
-local espEnabled = false          -- ВЫКЛЮЧЕН ПО УМОЛЧАНИЮ
+local espEnabled = false
 local espMode = "v1"
 local menuOpen = false
 local scriptActive = true
@@ -27,13 +27,27 @@ local dragStart = nil
 local dragStartPos = nil
 local animating = false
 local espCreating = false
-local hpBarsEnabled = false       -- ВЫКЛЮЧЕН ПО УМОЛЧАНИЮ
+local hpBarsEnabled = false
 
--- ===== СИСТЕМА БИНДОВ =====
+-- ===== AIM ASSIST =====
+local aimAssistEnabled = false
+local aimAssistFOV = 60
+local aimAssistSmoothness = 5
+local aimAssistShowFOV = false
+local fovCircle = nil
+local fovCircleGui = nil
+
+-- ===== NO CLIP =====
+local noclipEnabled = false
+local noclipConnection = nil
+
+-- ===== БИНДЫ =====
 local bindings = {
     fly = nil,
     esp = nil,
-    hp = nil,   -- НОВЫЙ БИНД ДЛЯ HP
+    hp = nil,
+    aimAssist = nil,
+    noclip = nil,
     menu = Enum.KeyCode.LeftAlt
 }
 
@@ -41,17 +55,19 @@ local waitingForBind = false
 local bindingMode = nil
 
 -- ============================================
--- ЧАСТЬ 1: ПОЛЁТ
+-- ЧАСТЬ 1: FLY
 -- ============================================
 local flySpeed = 80
 local bodyVelocity = nil
 local bodyGyro = nil
+local flyWasEnabled = false
 
 local function startFly()
     if not character or not humanoid then return end
     if bodyVelocity then return end
     
     humanoid.PlatformStand = true
+    
     local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
     if not rootPart then return end
     
@@ -64,9 +80,12 @@ local function startFly()
     bodyGyro.CFrame = rootPart.CFrame
     bodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
     bodyGyro.Parent = rootPart
+    
+    flyWasEnabled = true
 end
 
 local function stopFly()
+    flyWasEnabled = false
     if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
     if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
     if humanoid then humanoid.PlatformStand = false end
@@ -82,6 +101,13 @@ local function updateFly()
     local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
     if not rootPart then return end
     
+    if not bodyVelocity or not bodyGyro then
+        startFly()
+        if not bodyVelocity then return end
+        rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+        if not rootPart then return end
+    end
+    
     local moveDirection = Vector3.new(0, 0, 0)
     local cameraLook = Camera.CFrame.LookVector
     local cameraRight = Camera.CFrame.RightVector
@@ -90,6 +116,8 @@ local function updateFly()
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - cameraLook end
     if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - cameraRight end
     if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + cameraRight end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
     
     if moveDirection.Magnitude > 0 then
         moveDirection = moveDirection.Unit * flySpeed
@@ -104,6 +132,23 @@ local function updateFly()
     end
 end
 
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    if flyWasEnabled and flyEnabled then
+        task.wait(0.3)
+        startFly()
+    end
+    if noclipEnabled then
+        task.wait(0.1)
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
 -- ============================================
 -- ЧАСТЬ 2: ESP
 -- ============================================
@@ -114,9 +159,10 @@ espFolder.Parent = CoreGui
 local function createESPForPlayer(plr)
     if not plr or plr == player then return end
     if not espEnabled or not scriptActive then return end
+    if not plr.Team then return end
+    if plr.Team == player.Team then return end
     
     local userId = plr.UserId
-    
     local oldHighlight = espFolder:FindFirstChild("ESP_" .. userId)
     if oldHighlight then oldHighlight:Destroy() end
     local oldGlow = espFolder:FindFirstChild("ESP_Glow_" .. userId)
@@ -124,7 +170,6 @@ local function createESPForPlayer(plr)
     
     local char = plr.Character
     if not char then return end
-    
     local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
     if not rootPart then return end
     
@@ -161,49 +206,30 @@ end
 local function createESPForAll()
     if espCreating then return end
     espCreating = true
-    
-    for _, child in ipairs(espFolder:GetChildren()) do
-        child:Destroy()
-    end
-    
-    if not espEnabled or not scriptActive then
-        espCreating = false
-        return
-    end
-    
+    for _, child in ipairs(espFolder:GetChildren()) do child:Destroy() end
+    if not espEnabled or not scriptActive then espCreating = false return end
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player then
+        if plr ~= player and plr.Team and plr.Team ~= player.Team then
             createESPForPlayer(plr)
         end
     end
-    
     espCreating = false
 end
 
 local function repairESP()
     if not espEnabled or not scriptActive or espCreating then return end
-    
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player then
+        if plr ~= player and plr.Team and plr.Team ~= player.Team then
             local highlight = espFolder:FindFirstChild("ESP_" .. plr.UserId)
             local char = plr.Character
-            
             if char and not highlight then
                 createESPForPlayer(plr)
             end
-            
             if highlight and char then
-                if highlight.Adornee ~= char then
-                    highlight.Adornee = char
-                end
+                if highlight.Adornee ~= char then highlight.Adornee = char end
                 local glow = espFolder:FindFirstChild("ESP_Glow_" .. plr.UserId)
-                if glow and glow:IsA("Highlight") then
-                    if glow.Adornee ~= char then
-                        glow.Adornee = char
-                    end
-                end
+                if glow and glow:IsA("Highlight") and glow.Adornee ~= char then glow.Adornee = char end
             end
-            
             if not char and highlight then
                 highlight:Destroy()
                 local glow = espFolder:FindFirstChild("ESP_Glow_" .. plr.UserId)
@@ -215,28 +241,15 @@ end
 
 local function toggleESP()
     espEnabled = not espEnabled
-    if espEnabled then
-        createESPForAll()
-    else
-        for _, child in ipairs(espFolder:GetChildren()) do
-            child:Destroy()
-        end
-    end
-    if menuOpen then
-        updateESPButtons()
-        updateHPButton()
-    end
+    if espEnabled then createESPForAll() else for _, child in ipairs(espFolder:GetChildren()) do child:Destroy() end end
+    if menuOpen then updateESPButtons() end
 end
 
 local function setESPMode(mode)
     if mode ~= "v1" and mode ~= "v2" then return end
     espMode = mode
-    if espEnabled then
-        createESPForAll()
-    end
-    if menuOpen then
-        updateESPButtons()
-    end
+    if espEnabled then createESPForAll() end
+    if menuOpen then updateESPButtons() end
 end
 
 -- ============================================
@@ -257,7 +270,6 @@ local function createHPBar(plr)
     local userId = plr.UserId
     local char = plr.Character
     if not char then return end
-    
     local humanoid = char:FindFirstChild("Humanoid")
     if not humanoid then return end
     
@@ -287,13 +299,7 @@ local function createHPBar(plr)
     fill.BackgroundTransparency = 0.1
     fill.Parent = frame
     
-    hpBarData[userId] = {
-        frame = frame,
-        fill = fill,
-        humanoid = humanoid,
-        character = char,
-        connection = nil
-    }
+    hpBarData[userId] = { frame = frame, fill = fill, humanoid = humanoid, character = char }
     
     local function updateHP()
         local data = hpBarData[userId]
@@ -301,10 +307,8 @@ local function createHPBar(plr)
         local health = data.humanoid.Health
         local maxHealth = data.humanoid.MaxHealth
         local percent = math.clamp(health / maxHealth, 0, 1)
-        
         data.fill.Size = UDim2.new(1, 0, percent, 0)
         data.fill.Position = UDim2.new(0, 0, 0, 0)
-        
         local r = 1 - percent
         local g = percent
         data.fill.BackgroundColor3 = Color3.fromRGB(r * 255, g * 255, 0)
@@ -312,38 +316,22 @@ local function createHPBar(plr)
     
     local connection = humanoid.HealthChanged:Connect(updateHP)
     hpBarData[userId].connection = connection
-    
     task.wait(0.05)
     updateHP()
 end
 
 local function updateHPBarPositions()
     if not hpBarsEnabled or not scriptActive then return end
-    
     local camera = workspace.CurrentCamera
     if not camera then return end
-    
     for userId, data in pairs(hpBarData) do
-        if not data or not data.frame then
-            hpBarData[userId] = nil
-            continue
-        end
-        
+        if not data or not data.frame then hpBarData[userId] = nil continue end
         local char = data.character
-        if not char or not char.Parent then
-            data.frame.Visible = false
-            continue
-        end
-        
+        if not char or not char.Parent then data.frame.Visible = false continue end
         local head = char:FindFirstChild("Head")
-        if not head then
-            data.frame.Visible = false
-            continue
-        end
-        
+        if not head then data.frame.Visible = false continue end
         local headPos = head.Position + Vector3.new(-2.5, 0, 0)
         local screenPos, onScreen = camera:WorldToViewportPoint(headPos)
-        
         if onScreen then
             data.frame.Visible = true
             data.frame.Position = UDim2.new(0, screenPos.X - 4, 0, screenPos.Y - 40)
@@ -359,35 +347,20 @@ local function createHPBarsForAll()
         if data and data.connection then data.connection:Disconnect() end
     end
     hpBarData = {}
-    
-    for _, child in ipairs(hpBarScreenGui:GetChildren()) do
-        child:Destroy()
-    end
-    
+    for _, child in ipairs(hpBarScreenGui:GetChildren()) do child:Destroy() end
     if not hpBarsEnabled or not scriptActive then return end
-    
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player then
-            task.spawn(function()
-                task.wait(0.1)
-                if plr.Character then
-                    createHPBar(plr)
-                end
-            end)
-        end
+        if plr ~= player then task.spawn(function() task.wait(0.1) if plr.Character then createHPBar(plr) end end) end
     end
 end
 
 local function repairHPBars()
     if not hpBarsEnabled or not scriptActive then return end
-    
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= player then
             local data = hpBarData[plr.UserId]
             local char = plr.Character
-            
-            if char and not data then
-                createHPBar(plr)
+            if char and not data then createHPBar(plr)
             elseif data and char then
                 data.character = char
                 local humanoid = char:FindFirstChild("Humanoid")
@@ -419,25 +392,184 @@ end
 
 local function toggleHPBars()
     hpBarsEnabled = not hpBarsEnabled
-    if hpBarsEnabled then
-        createHPBarsForAll()
-    else
+    if hpBarsEnabled then createHPBarsForAll() else
         for userId, data in pairs(hpBarData) do
             if data and data.frame then data.frame:Destroy() end
             if data and data.connection then data.connection:Disconnect() end
         end
         hpBarData = {}
-        for _, child in ipairs(hpBarScreenGui:GetChildren()) do
-            child:Destroy()
+        for _, child in ipairs(hpBarScreenGui:GetChildren()) do child:Destroy() end
+    end
+    if menuOpen then updateESPButtons() end
+end
+
+-- ============================================
+-- ЧАСТЬ 4: AIM ASSIST
+-- ============================================
+
+local function getClosestPlayerInFOV()
+    if not Camera then return nil end
+
+    local closest = nil
+    local closestAngle = math.huge
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == player then continue end
+        if not plr.Team then continue end
+        if plr.Team == player.Team then continue end
+        
+        if plr.Character and plr.Character:FindFirstChild("Head") then
+            local head = plr.Character.Head
+            local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+
+            if onScreen then
+                local delta = Vector2.new(screenPos.X, screenPos.Y) - center
+                if delta.Magnitude <= aimAssistFOV then
+                    local distance = (head.Position - Camera.CFrame.Position).Magnitude
+                    if distance < closestAngle then
+                        closest = plr
+                        closestAngle = distance
+                    end
+                end
+            end
         end
     end
-    if menuOpen then
-        updateHPButton()
+
+    return closest
+end
+
+local function updateAimAssist()
+    if not aimAssistEnabled or not scriptActive then return end
+
+    local target = getClosestPlayerInFOV()
+    if target and target.Character and target.Character:FindFirstChild("Head") then
+        local headPos = target.Character.Head.Position
+        local cameraPos = Camera.CFrame.Position
+
+        local direction = (headPos - cameraPos).Unit
+        local targetCFrame = CFrame.new(cameraPos, cameraPos + direction)
+
+        local currentCFrame = Camera.CFrame
+        local newCFrame = currentCFrame:Lerp(targetCFrame, 1 / aimAssistSmoothness)
+        Camera.CFrame = newCFrame
+    end
+end
+
+local function createFOVCircle()
+    if not aimAssistShowFOV then
+        if fovCircle then
+            fovCircle:Destroy()
+            fovCircle = nil
+            fovCircleGui:Destroy()
+            fovCircleGui = nil
+        end
+        return
+    end
+
+    if fovCircle then
+        fovCircle:Destroy()
+        fovCircle = nil
+        fovCircleGui:Destroy()
+        fovCircleGui = nil
+    end
+
+    fovCircleGui = Instance.new("ScreenGui")
+    fovCircleGui.Name = "FOVCircleGui"
+    fovCircleGui.Parent = CoreGui
+    fovCircleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    fovCircleGui.IgnoreGuiInset = true
+
+    fovCircle = Instance.new("Frame")
+    fovCircle.Name = "FOVCircle"
+    fovCircle.Size = UDim2.new(0, aimAssistFOV * 2, 0, aimAssistFOV * 2)
+    fovCircle.Position = UDim2.new(0.5, -aimAssistFOV, 0.5, -aimAssistFOV)
+    fovCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    fovCircle.BackgroundTransparency = 0.85
+    fovCircle.BorderSizePixel = 2
+    fovCircle.BorderColor3 = Color3.fromRGB(0, 255, 0)
+    fovCircle.ZIndex = 10
+    fovCircle.Parent = fovCircleGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = fovCircle
+end
+
+local function toggleAimAssist()
+    aimAssistEnabled = not aimAssistEnabled
+    if aimAssistEnabled then
+        createFOVCircle()
+    else
+        if fovCircle then
+            fovCircle:Destroy()
+            fovCircle = nil
+            fovCircleGui:Destroy()
+            fovCircleGui = nil
+        end
+    end
+    if menuOpen and mainTab then
+        for _, child in ipairs(mainTab:GetChildren()) do
+            if child:IsA("TextButton") and child.Name == "AimAssistBtn" then
+                child.Text = aimAssistEnabled and "AIM ASSIST: ON" or "AIM ASSIST: OFF"
+                child.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+            end
+        end
     end
 end
 
 -- ============================================
--- ЧАСТЬ 4: UI
+-- ЧАСТЬ 5: NO CLIP
+-- ============================================
+local function toggleNoclip()
+    noclipEnabled = not noclipEnabled
+    if noclipEnabled then
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+        noclipConnection = RunService.Heartbeat:Connect(function()
+            if not noclipEnabled or not scriptActive then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+                return
+            end
+            if character then
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+    if menuOpen and mainTab then
+        for _, child in ipairs(mainTab:GetChildren()) do
+            if child:IsA("TextButton") and child.Name == "NoclipBtn" then
+                child.Text = noclipEnabled and "NOCLIP: ON" or "NOCLIP: OFF"
+                child.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+            end
+        end
+    end
+end
+
+-- ============================================
+-- ЧАСТЬ 6: UI
 -- ============================================
 local espV1Btn = nil
 local espV2Btn = nil
@@ -450,9 +582,20 @@ function updateESPButtons()
                 child.Text = espEnabled and "ESP: ON" or "ESP: OFF"
                 child.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
             end
+            if child:IsA("TextButton") and child.Name == "AimAssistBtn" then
+                child.Text = aimAssistEnabled and "AIM ASSIST: ON" or "AIM ASSIST: OFF"
+                child.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+            end
+            if child:IsA("TextButton") and child.Name == "NoclipBtn" then
+                child.Text = noclipEnabled and "NOCLIP: ON" or "NOCLIP: OFF"
+                child.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+            end
+            if child:IsA("TextButton") and child.Name == "HPVisualBtn2" then
+                child.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
+                child.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+            end
         end
     end
-    
     if espV1Btn and espV2Btn then
         if espMode == "v1" then
             espV1Btn.BackgroundColor3 = Color3.fromRGB(180, 50, 60)
@@ -466,14 +609,6 @@ function updateESPButtons()
             espV1Btn.BackgroundTransparency = 0.3
         end
     end
-    
-    if hpVisualBtn then
-        hpVisualBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
-        hpVisualBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
-    end
-end
-
-function updateHPButton()
     if hpVisualBtn then
         hpVisualBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
         hpVisualBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
@@ -550,7 +685,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 15, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "FORTER v10.9"
+title.Text = "FORTER v12.4"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextScaled = true
@@ -575,16 +710,9 @@ local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 8)
 closeCorner.Parent = closeBtn
 
-closeBtn.MouseButton1Click:Connect(function()
-    toggleMenu(false)
-end)
-
-closeBtn.MouseEnter:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
-end)
-closeBtn.MouseLeave:Connect(function()
-    TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
-end)
+closeBtn.MouseButton1Click:Connect(function() toggleMenu(false) end)
+closeBtn.MouseEnter:Connect(function() TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play() end)
+closeBtn.MouseLeave:Connect(function() TweenService:Create(closeBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play() end)
 
 titleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -592,9 +720,7 @@ titleBar.InputBegan:Connect(function(input)
         dragStart = input.Position
         dragStartPos = mainFrame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
@@ -602,12 +728,7 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(
-            dragStartPos.X.Scale,
-            dragStartPos.X.Offset + delta.X,
-            dragStartPos.Y.Scale,
-            dragStartPos.Y.Offset + delta.Y
-        )
+        mainFrame.Position = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
     end
 end)
 
@@ -644,14 +765,10 @@ for i, name in ipairs(tabs) do
     btnCorner.Parent = btn
     
     btn.MouseEnter:Connect(function()
-        if currentTab ~= i then
-            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
-        end
+        if currentTab ~= i then TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play() end
     end)
     btn.MouseLeave:Connect(function()
-        if currentTab ~= i then
-            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
-        end
+        if currentTab ~= i then TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play() end
     end)
     
     btn.MouseButton1Click:Connect(function()
@@ -676,7 +793,7 @@ contentFrame.ClipsDescendants = true
 contentFrame.ZIndex = 3
 contentFrame.Parent = container
 
--- ===== ВКЛАДКА ГЛАВНАЯ (БЕЗ HP) =====
+-- ===== ВКЛАДКА ГЛАВНАЯ =====
 local mainTab = nil
 
 local function createMainTab()
@@ -687,6 +804,7 @@ local function createMainTab()
     tab.Visible = true
     tab.Parent = contentFrame
     
+    -- ESP Button (1 строка, лево)
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPMainBtn"
     espBtn.Size = UDim2.new(0, 190, 0, 45)
@@ -711,6 +829,7 @@ local function createMainTab()
         espBtn.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
     end)
     
+    -- Fly Button (1 строка, право)
     local flyBtn = Instance.new("TextButton")
     flyBtn.Size = UDim2.new(0, 190, 0, 45)
     flyBtn.Position = UDim2.new(0.55, 0, 0.03, 0)
@@ -732,13 +851,148 @@ local function createMainTab()
         flyEnabled = not flyEnabled
         flyBtn.Text = flyEnabled and "FLY: ON" or "FLY: OFF"
         flyBtn.BackgroundColor3 = flyEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
-        if flyEnabled then
-            startFly()
-        else
-            stopFly()
+        if flyEnabled then startFly() else stopFly() end
+    end)
+    
+    -- Aim Assist Button (2 строка, лево)
+    local aimBtn = Instance.new("TextButton")
+    aimBtn.Name = "AimAssistBtn"
+    aimBtn.Size = UDim2.new(0, 190, 0, 45)
+    aimBtn.Position = UDim2.new(0.05, 0, 0.20, 0)
+    aimBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    aimBtn.BackgroundTransparency = 0.2
+    aimBtn.BorderSizePixel = 0
+    aimBtn.Text = "AIM ASSIST: OFF"
+    aimBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    aimBtn.TextScaled = true
+    aimBtn.Font = Enum.Font.GothamSemibold
+    aimBtn.ZIndex = 4
+    aimBtn.Parent = tab
+    
+    local aimCorner = Instance.new("UICorner")
+    aimCorner.CornerRadius = UDim.new(0, 10)
+    aimCorner.Parent = aimBtn
+    
+    aimBtn.MouseButton1Click:Connect(function()
+        toggleAimAssist()
+        aimBtn.Text = aimAssistEnabled and "AIM ASSIST: ON" or "AIM ASSIST: OFF"
+        aimBtn.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+    end)
+    
+    -- HP Button (2 строка, право) - вместо пустоты
+    local hpBtn = Instance.new("TextButton")
+    hpBtn.Name = "HPVisualBtn2"
+    hpBtn.Size = UDim2.new(0, 190, 0, 45)
+    hpBtn.Position = UDim2.new(0.55, 0, 0.20, 0)
+    hpBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    hpBtn.BackgroundTransparency = 0.2
+    hpBtn.BorderSizePixel = 0
+    hpBtn.Text = "HP: OFF"
+    hpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    hpBtn.TextScaled = true
+    hpBtn.Font = Enum.Font.GothamSemibold
+    hpBtn.ZIndex = 4
+    hpBtn.Parent = tab
+    
+    local hpCorner2 = Instance.new("UICorner")
+    hpCorner2.CornerRadius = UDim.new(0, 10)
+    hpCorner2.Parent = hpBtn
+    
+    hpBtn.MouseButton1Click:Connect(function()
+        toggleHPBars()
+        hpBtn.Text = hpBarsEnabled and "HP: ON" or "HP: OFF"
+        hpBtn.BackgroundColor3 = hpBarsEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+    end)
+    
+    -- No Clip Button (3 строка, лево)
+    local noclipBtn = Instance.new("TextButton")
+    noclipBtn.Name = "NoclipBtn"
+    noclipBtn.Size = UDim2.new(0, 190, 0, 45)
+    noclipBtn.Position = UDim2.new(0.05, 0, 0.37, 0)
+    noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    noclipBtn.BackgroundTransparency = 0.2
+    noclipBtn.BorderSizePixel = 0
+    noclipBtn.Text = "NOCLIP: OFF"
+    noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    noclipBtn.TextScaled = true
+    noclipBtn.Font = Enum.Font.GothamSemibold
+    noclipBtn.ZIndex = 4
+    noclipBtn.Parent = tab
+    
+    local noclipCorner = Instance.new("UICorner")
+    noclipCorner.CornerRadius = UDim.new(0, 10)
+    noclipCorner.Parent = noclipBtn
+    
+    noclipBtn.MouseButton1Click:Connect(function()
+        toggleNoclip()
+        noclipBtn.Text = noclipEnabled and "NOCLIP: ON" or "NOCLIP: OFF"
+        noclipBtn.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+    end)
+    
+    -- FOV Button (3 строка, право)
+    local fovBtn = Instance.new("TextButton")
+    fovBtn.Name = "FOVBtn"
+    fovBtn.Size = UDim2.new(0, 190, 0, 45)
+    fovBtn.Position = UDim2.new(0.55, 0, 0.37, 0)
+    fovBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    fovBtn.BackgroundTransparency = 0.2
+    fovBtn.BorderSizePixel = 0
+    fovBtn.Text = "FOV: " .. aimAssistFOV
+    fovBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fovBtn.TextScaled = true
+    fovBtn.Font = Enum.Font.GothamSemibold
+    fovBtn.ZIndex = 4
+    fovBtn.Parent = tab
+    
+    local fovCorner = Instance.new("UICorner")
+    fovCorner.CornerRadius = UDim.new(0, 10)
+    fovCorner.Parent = fovBtn
+    
+    fovBtn.MouseButton1Click:Connect(function()
+        if aimAssistFOV == 30 then aimAssistFOV = 60
+        elseif aimAssistFOV == 60 then aimAssistFOV = 90
+        elseif aimAssistFOV == 90 then aimAssistFOV = 120
+        elseif aimAssistFOV == 120 then aimAssistFOV = 30 end
+        fovBtn.Text = "FOV: " .. aimAssistFOV
+        if aimAssistShowFOV then createFOVCircle() end
+    end)
+    
+    -- Show FOV Button (4 строка, лево)
+    local showFovBtn = Instance.new("TextButton")
+    showFovBtn.Name = "ShowFOVBtn"
+    showFovBtn.Size = UDim2.new(0, 190, 0, 45)
+    showFovBtn.Position = UDim2.new(0.05, 0, 0.54, 0)
+    showFovBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 55)
+    showFovBtn.BackgroundTransparency = 0.2
+    showFovBtn.BorderSizePixel = 0
+    showFovBtn.Text = "SHOW FOV: OFF"
+    showFovBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    showFovBtn.TextScaled = true
+    showFovBtn.Font = Enum.Font.GothamSemibold
+    showFovBtn.ZIndex = 4
+    showFovBtn.Parent = tab
+    
+    local showFovCorner = Instance.new("UICorner")
+    showFovCorner.CornerRadius = UDim.new(0, 10)
+    showFovCorner.Parent = showFovBtn
+    
+    showFovBtn.MouseButton1Click:Connect(function()
+        aimAssistShowFOV = not aimAssistShowFOV
+        showFovBtn.Text = aimAssistShowFOV and "SHOW FOV: ON" or "SHOW FOV: OFF"
+        showFovBtn.BackgroundColor3 = aimAssistShowFOV and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+        if aimAssistShowFOV then createFOVCircle() else
+            if fovCircle then
+                fovCircle:Destroy()
+                fovCircle = nil
+                fovCircleGui:Destroy()
+                fovCircleGui = nil
+            end
         end
     end)
     
+    -- 4 строка, право - пустота (ничего не добавляем)
+    
+    -- Shutdown Button
     local shutdownBtn = Instance.new("TextButton")
     shutdownBtn.Size = UDim2.new(0.8, 0, 0, 50)
     shutdownBtn.Position = UDim2.new(0.1, 0, 0.78, 0)
@@ -761,17 +1015,22 @@ local function createMainTab()
         flyEnabled = false
         espEnabled = false
         hpBarsEnabled = false
+        aimAssistEnabled = false
+        noclipEnabled = false
         stopFly()
-        for _, child in ipairs(espFolder:GetChildren()) do
-            child:Destroy()
-        end
+        if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+        for _, child in ipairs(espFolder:GetChildren()) do child:Destroy() end
         for userId, data in pairs(hpBarData) do
             if data and data.frame then data.frame:Destroy() end
             if data and data.connection then data.connection:Disconnect() end
         end
         hpBarData = {}
-        for _, child in ipairs(hpBarScreenGui:GetChildren()) do
-            child:Destroy()
+        for _, child in ipairs(hpBarScreenGui:GetChildren()) do child:Destroy() end
+        if fovCircle then
+            fovCircle:Destroy()
+            fovCircle = nil
+            fovCircleGui:Destroy()
+            fovCircleGui = nil
         end
         screenGui.Enabled = false
         menuOpen = false
@@ -783,7 +1042,7 @@ local function createMainTab()
     return tab
 end
 
--- ===== ВКЛАДКА VISUALS (С HP) =====
+-- ===== ВКЛАДКА VISUALS =====
 local function createVisualsTab()
     local tab = Instance.new("Frame")
     tab.Name = "Tab_Visuals"
@@ -865,7 +1124,6 @@ local function createVisualsTab()
     descLabel.ZIndex = 4
     descLabel.Parent = tab
     
-    -- ===== HP BAR BUTTON (В VISUALS) =====
     local hpBtn = Instance.new("TextButton")
     hpBtn.Name = "HPVisualBtn"
     hpBtn.Size = UDim2.new(0.8, 0, 0, 45)
@@ -892,14 +1150,13 @@ local function createVisualsTab()
     end)
     
     hpVisualBtn = hpBtn
-    
     espV1Btn = v1Btn
     espV2Btn = v2Btn
     
     return tab
 end
 
--- ===== ВКЛАДКА БИНДЫ (С HP) =====
+-- ===== ВКЛАДКА БИНДЫ =====
 local function createBindTab()
     local tab = Instance.new("Frame")
     tab.Name = "Tab_Binds"
@@ -973,7 +1230,9 @@ local function createBindTab()
     
     createBindRow("fly", bindings.fly)
     createBindRow("esp", bindings.esp)
-    createBindRow("hp", bindings.hp)   -- НОВЫЙ БИНД ДЛЯ HP
+    createBindRow("hp", bindings.hp)
+    createBindRow("aimAssist", bindings.aimAssist)
+    createBindRow("noclip", bindings.noclip)
     createBindRow("menu", bindings.menu)
     
     return tab
@@ -989,9 +1248,7 @@ function updateTabContent()
     for i, tab in ipairs(tabContents) do
         tab.Visible = (i == currentTab)
     end
-    if currentTab == 2 then
-        updateESPButtons()
-    end
+    if currentTab == 2 then updateESPButtons() end
 end
 
 updateTabContent()
@@ -1041,16 +1298,14 @@ function toggleMenu(open)
 end
 
 -- ============================================
--- ЧАСТЬ 5: ОБРАБОТЧИКИ СОБЫТИЙ
+-- ОБРАБОТЧИКИ СОБЫТИЙ (БИНДЫ)
 -- ============================================
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not scriptActive then return end
     local key = input.KeyCode
     if key == Enum.KeyCode.Unknown then return end
-    
-    -- FLY BIND
+
     if bindings.fly and key == bindings.fly then
         flyEnabled = not flyEnabled
         if flyEnabled then startFly() else stopFly() end
@@ -1062,36 +1317,59 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 end
             end
         end
+        return
     end
-    
-    -- ESP BIND
+
     if bindings.esp and key == bindings.esp then
         toggleESP()
+        return
     end
-    
-    -- HP BIND (НОВЫЙ)
+
     if bindings.hp and key == bindings.hp then
         toggleHPBars()
-        if menuOpen then
-            updateESPButtons()
-        end
+        if menuOpen then updateESPButtons() end
+        return
     end
-    
-    -- MENU BIND
+
+    if bindings.aimAssist and key == bindings.aimAssist then
+        toggleAimAssist()
+        if menuOpen then
+            for _, child in ipairs(mainTab:GetChildren()) do
+                if child:IsA("TextButton") and child.Name == "AimAssistBtn" then
+                    child.Text = aimAssistEnabled and "AIM ASSIST: ON" or "AIM ASSIST: OFF"
+                    child.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+                end
+            end
+        end
+        return
+    end
+
+    if bindings.noclip and key == bindings.noclip then
+        toggleNoclip()
+        if menuOpen then
+            for _, child in ipairs(mainTab:GetChildren()) do
+                if child:IsA("TextButton") and child.Name == "NoclipBtn" then
+                    child.Text = noclipEnabled and "NOCLIP: ON" or "NOCLIP: OFF"
+                    child.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
+                end
+            end
+        end
+        return
+    end
+
     if bindings.menu and key == bindings.menu then
         toggleMenu(not menuOpen)
+        return
     end
 end)
 
 Players.PlayerAdded:Connect(function(plr)
     plr.CharacterAdded:Connect(function()
         task.wait(0.1)
-        if espEnabled and scriptActive then
+        if espEnabled and scriptActive and plr.Team and plr.Team ~= player.Team then
             createESPForPlayer(plr)
         end
-        if hpBarsEnabled and scriptActive then
-            createHPBar(plr)
-        end
+        if hpBarsEnabled and scriptActive then createHPBar(plr) end
     end)
 end)
 
@@ -1100,7 +1378,6 @@ Players.PlayerRemoving:Connect(function(plr)
     if highlight then highlight:Destroy() end
     local glow = espFolder:FindFirstChild("ESP_Glow_" .. plr.UserId)
     if glow then glow:Destroy() end
-    
     local data = hpBarData[plr.UserId]
     if data then
         if data.frame then data.frame:Destroy() end
@@ -1112,25 +1389,20 @@ end)
 task.spawn(function()
     while scriptActive do
         task.wait(3)
-        if espEnabled and scriptActive then
-            repairESP()
-        end
-        if hpBarsEnabled and scriptActive then
-            repairHPBars()
-        end
+        if espEnabled and scriptActive then repairESP() end
+        if hpBarsEnabled and scriptActive then repairHPBars() end
     end
 end)
 
 RunService.Heartbeat:Connect(function()
     if not scriptActive then return end
-    if flyEnabled then
-        updateFly()
-    end
+    if flyEnabled then updateFly() end
     updateHPBarPositions()
+    if aimAssistEnabled then updateAimAssist() end
 end)
 
 -- ============================================
--- ИНИЦИАЛИЗАЦИЯ (ESP И HP ВЫКЛЮЧЕНЫ)
+-- ИНИЦИАЛИЗАЦИЯ
 -- ============================================
 task.wait(1)
 if not character or not humanoid then
@@ -1139,11 +1411,11 @@ if not character or not humanoid then
     humanoid = character:FindFirstChild("Humanoid")
 end
 
--- ВСЁ ВЫКЛЮЧЕНО ПО УМОЛЧАНИЮ
 espEnabled = false
 espMode = "v1"
 hpBarsEnabled = false
+aimAssistEnabled = false
+noclipEnabled = false
 
--- НЕ СОЗДАЁМ ESP И HP BAR ПРИ СТАРТЕ
-print("FORTER v10.9 загружен! ESP и HP Bar выключены по умолчанию.")
-print("Нажми Alt для меню. Включи их вручную.")
+print("FORTER v12.4 FINAL загружен! Без SPEED, HP на главной.")
+print("Нажми Alt для меню.")
