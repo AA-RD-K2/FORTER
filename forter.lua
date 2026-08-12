@@ -1,6 +1,6 @@
 --[[
     FORTER — ULTIMATE SCRIPT FOR XENO
-    Версия: 12.4 (FINAL — БЕЗ SPEED, С HP НА ГЛАВНОЙ)
+    Версия: 12.4 (FINAL — БЕЗ SPEED, С HP НА ГЛАВНОЙ, С БЕЛЫМ КРЕДИТОМ)
     Содержит: Fly, ESP (только враги), HP Bar, Aim Assist (только враги), No Clip
 --]]
 
@@ -879,7 +879,7 @@ local function createMainTab()
         aimBtn.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 140, 70) or Color3.fromRGB(60, 50, 55)
     end)
     
-    -- HP Button (2 строка, право) - вместо пустоты
+    -- HP Button (2 строка, право)
     local hpBtn = Instance.new("TextButton")
     hpBtn.Name = "HPVisualBtn2"
     hpBtn.Size = UDim2.new(0, 190, 0, 45)
@@ -1039,6 +1039,19 @@ local function createMainTab()
         hpBarScreenGui:Destroy()
     end)
     
+    -- CREDIT LABEL (в самом низу, ниже кнопки выключения) - БЕЛЫЙ ТЕКСТ
+    local creditLabel = Instance.new("TextLabel")
+    creditLabel.Size = UDim2.new(1, 0, 0, 25)
+    creditLabel.Position = UDim2.new(0, 0, 0.92, 0)
+    creditLabel.BackgroundTransparency = 1
+    creditLabel.Text = "Made by AA-Scripts ; t.me/AAscripts"
+    creditLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    creditLabel.TextScaled = true
+    creditLabel.Font = Enum.Font.Gotham
+    creditLabel.TextXAlignment = Enum.TextXAlignment.Center
+    creditLabel.ZIndex = 4
+    creditLabel.Parent = tab
+    
     return tab
 end
 
@@ -1153,6 +1166,19 @@ local function createVisualsTab()
     espV1Btn = v1Btn
     espV2Btn = v2Btn
     
+    -- CREDIT LABEL на вкладке Visuals - БЕЛЫЙ ТЕКСТ
+    local creditLabel2 = Instance.new("TextLabel")
+    creditLabel2.Size = UDim2.new(1, 0, 0, 25)
+    creditLabel2.Position = UDim2.new(0, 0, 0.92, 0)
+    creditLabel2.BackgroundTransparency = 1
+    creditLabel2.Text = "Made by AA-Scripts ; t.me/AAscripts"
+    creditLabel2.TextColor3 = Color3.fromRGB(255, 255, 255)
+    creditLabel2.TextScaled = true
+    creditLabel2.Font = Enum.Font.Gotham
+    creditLabel2.TextXAlignment = Enum.TextXAlignment.Center
+    creditLabel2.ZIndex = 4
+    creditLabel2.Parent = tab
+    
     return tab
 end
 
@@ -1234,6 +1260,19 @@ local function createBindTab()
     createBindRow("aimAssist", bindings.aimAssist)
     createBindRow("noclip", bindings.noclip)
     createBindRow("menu", bindings.menu)
+    
+    -- CREDIT LABEL на вкладке Бинды - БЕЛЫЙ ТЕКСТ
+    local creditLabel3 = Instance.new("TextLabel")
+    creditLabel3.Size = UDim2.new(1, 0, 0, 25)
+    creditLabel3.Position = UDim2.new(0, 0, 0.92, 0)
+    creditLabel3.BackgroundTransparency = 1
+    creditLabel3.Text = "Made by AA-Scripts ; t.me/AAscripts"
+    creditLabel3.TextColor3 = Color3.fromRGB(255, 255, 255)
+    creditLabel3.TextScaled = true
+    creditLabel3.Font = Enum.Font.Gotham
+    creditLabel3.TextXAlignment = Enum.TextXAlignment.Center
+    creditLabel3.ZIndex = 4
+    creditLabel3.Parent = tab
     
     return tab
 end
@@ -1419,3 +1458,4 @@ noclipEnabled = false
 
 print("FORTER v12.4 FINAL загружен! Без SPEED, HP на главной.")
 print("Нажми Alt для меню.")
+print("Made by AA-Scripts ; t.me/AAscripts")
